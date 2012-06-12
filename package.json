@@ -1,0 +1,7 @@
+{
+  "name": "plumb",
+  "version": "0.0.1",
+  "dependencies": {
+    "leveldb": "git://github.com/maxogden/node-leveldb.git"
+  }
+}
