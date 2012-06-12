@@ -1,6 +1,7 @@
 var leveldb = require('leveldb')
 var JSONStream = require('JSONStream')
 var async = require('async')
+var microtime = require('microtime')
 
 function PlumbDB(name, cb) {
   var me = this
@@ -63,14 +64,8 @@ PlumbDB.prototype.bulk = function(readStream, cb) {
 }
 
 PlumbDB.prototype._store = function(json, cb) {
-  json._stamp = this._getUniqueTime()
+  json._stamp = microtime.now() + ""
   this.db.put(json._stamp, JSON.stringify(json), function(err) {
     cb(err, json)
   })
-}
-
-PlumbDB.prototype._getUniqueTime = function() {
-  var time = +new Date()
-  while (time === +new Date())
-  return +new Date()+""
 }

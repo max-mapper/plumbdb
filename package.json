@@ -4,6 +4,7 @@
   "dependencies": {
     "leveldb": "git://github.com/maxogden/node-leveldb.git",
     "JSONStream": "0.2.2",
-    "async": "0.1.22"
+    "async": "0.1.22",
+    "microtime": "0.3.1"
   }
 }
