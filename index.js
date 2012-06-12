@@ -1,4 +1,6 @@
 var leveldb = require('leveldb')
+var JSONStream = require('JSONStream')
+var async = require('async')
 
 function PlumbDB(name, cb) {
   var me = this
@@ -31,6 +33,33 @@ PlumbDB.prototype.put = function(readStream, cb) {
     me._store(json, cb)
   })
   readStream.on('error', function(err) { cb(err) })
+}
+
+PlumbDB.prototype.bulk = function(readStream, cb) {
+  var me = this
+  var parser = JSONStream.parse(['docs', /./])
+  var results = []
+  var doneParsing = false
+  var error = false
+  
+  var q = async.queue(function (doc, cb) {
+    me._store(doc, function(err) {
+      if (err) return cb(err)
+      results.push(doc)
+      cb(false)
+    })
+  }, 1)
+  
+  q.drain = function() { if (doneParsing && !error) cb(false, results) }
+  readStream.pipe(parser)
+  parser.on('data', q.push)
+  parser.on('error', function(err) {
+    error = true
+    return cb(err)
+  })
+  parser.on('end', function() {
+    doneParsing = true
+  })
 }
 
 PlumbDB.prototype._store = function(json, cb) {
