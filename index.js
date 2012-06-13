@@ -36,6 +36,19 @@ PlumbDB.prototype.put = function(readStream, cb) {
   readStream.on('error', function(err) { cb(err) })
 }
 
+// hack until node-leveldb gets streams
+PlumbDB.prototype._getLast = function(cb) {
+  this.db.iterator(function(err, iterator) {
+    if (err) return cb(err)
+    iterator.last(function(err) {
+      if (err) return cb(err)
+      iterator.current(function(err, key, val) {
+        cb(err, key)
+      })
+    })
+  })
+}
+
 PlumbDB.prototype.bulk = function(readStream, cb) {
   var me = this
   var parser = JSONStream.parse(['docs', /./])
