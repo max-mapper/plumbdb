@@ -2,9 +2,12 @@ var leveldb = require('leveldb')
 var JSONStream = require('JSONStream')
 var async = require('async')
 var microtime = require('microtime')
+var crypto = require('crypto')
+var uuid = require('node-uuid')
 
 function PlumbDB(name, cb) {
   var me = this
+  me.prefix = "_"
   leveldb.open(name + ".leveldb", { create_if_missing: true }, loaded)
   function loaded(err, db) {
     if (db) me.db = db
@@ -19,7 +22,7 @@ module.exports = function(name, cb) {
 module.exports.PlumbDB = PlumbDB
 
 PlumbDB.prototype.get = function(id, cb) {
- this.db.get(id, function (err, data) {
+ this.db.get(this.prefix + id, function (err, data) {
     if (err) return cb(err)
     cb(false, JSON.parse(data))
   })
@@ -73,12 +76,36 @@ PlumbDB.prototype.bulk = function(readStream, cb) {
   })
   parser.on('end', function() {
     doneParsing = true
+    if (q.length() === 0 && !error) cb(false, results)
   })
 }
 
+PlumbDB.prototype._incrementRev = function(json) {
+  var rev = 0
+  if (json._rev) rev = json._rev.split('-')[0]
+  return ++rev + '-' + this._hash(json)
+}
+
+PlumbDB.prototype._hash = function(json) {
+  return crypto.createHash('md5').update(JSON.stringify(json)).digest("hex")
+}
+
 PlumbDB.prototype._store = function(json, cb) {
+  var me = this
   json._stamp = microtime.now() + ""
-  this.db.put(json._stamp, JSON.stringify(json), function(err) {
-    cb(err, json)
+  if (!json._id) json._id = uuid.v4()
+  json._rev = this._incrementRev(json)
+  me.get(json._id, function(err, stored) {
+    function done(err) { cb(err, json) }
+    function save() { me.db.put(me.prefix + json._id, JSON.stringify(json), done) }
+    if (!stored) return save()
+    if (stored._rev !== json._rev && me._incrementRev(stored) !== json._rev)
+      return done({error: "conflict"})
+    return save()
   })
+  
+  // var batch = this.db.batch()
+  // batch.put(json._id + '@' + json._rev, JSON.stringify(json))
+  // batch.put(me.prefix + json._id, JSON.stringify(json))
+  // batch.write(done)
 }
