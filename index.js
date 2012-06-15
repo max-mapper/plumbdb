@@ -7,7 +7,9 @@ var uuid = require('node-uuid')
 
 function PlumbDB(name, cb) {
   var me = this
-  me.prefix = "_"
+  // make sure changes prefix sorts later than doc prefix
+  me.docPrefix = "@"
+  me.stampPrefix = "\u9999"
   leveldb.open(name + ".leveldb", { create_if_missing: true }, loaded)
   function loaded(err, db) {
     if (db) me.db = db
@@ -22,9 +24,14 @@ module.exports = function(name, cb) {
 module.exports.PlumbDB = PlumbDB
 
 PlumbDB.prototype.get = function(id, cb) {
- this.db.get(this.prefix + id, function (err, data) {
+  var me = this
+  me.db.get(me.docPrefix + id, function (err, stamp) {
     if (err) return cb(err)
-    cb(false, JSON.parse(data))
+    if (!stamp) return cb(false, null)
+    me.db.get(me.stampPrefix + stamp, function (err, data) {
+      if (err) return cb(err)
+      cb(false, JSON.parse(data))
+    })
   })
 }
 
@@ -90,21 +97,37 @@ PlumbDB.prototype._hash = function(json) {
   return crypto.createHash('md5').update(JSON.stringify(json)).digest("hex")
 }
 
+PlumbDB.prototype._dumpAll = function() {
+  this.db.iterator(function(err, iterator) {
+    iterator.forRange(function(err, key, val) {
+      console.log(err, key, val)
+    })
+  })
+}
+
 PlumbDB.prototype._store = function(json, cb) {
+  console.log('storing', json)
   var me = this
   json._stamp = microtime.now() + ""
   if (!json._id) json._id = uuid.v4()
+  function save(afterPut) {
+    json._rev = me._incrementRev(json)
+    // todo break out into easy batch function
+    var batch = me.db.batch()
+    batch.put(me.stampPrefix + json._stamp, JSON.stringify(json))
+    batch.put(me.docPrefix + json._id, json._stamp)
+    if (afterPut) afterPut(batch)
+    batch.write(done)
+  }
+  function done(err) { cb(err, json) }
+  
   me.get(json._id, function(err, stored) {
-    function done(err) { cb(err, json) }
-    function save() { me.db.put(me.prefix + json._id, JSON.stringify(json), done) }
+    // todo decide how to handle err
     if (!stored) return save()
     if (stored._rev !== json._rev) return done({conflict: true})
-    json._rev = me._incrementRev(json)
-    return save()
+    return save(function afterPut(batch) {
+      batch.del(me.stampPrefix + stored._stamp)
+    })
   })
-  
-  // var batch = this.db.batch()
-  // batch.put(json._id + '@' + json._rev, JSON.stringify(json))
-  // batch.put(me.prefix + json._id, JSON.stringify(json))
-  // batch.write(done)
+
 }
