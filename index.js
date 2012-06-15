@@ -94,13 +94,12 @@ PlumbDB.prototype._store = function(json, cb) {
   var me = this
   json._stamp = microtime.now() + ""
   if (!json._id) json._id = uuid.v4()
-  json._rev = this._incrementRev(json)
   me.get(json._id, function(err, stored) {
     function done(err) { cb(err, json) }
     function save() { me.db.put(me.prefix + json._id, JSON.stringify(json), done) }
     if (!stored) return save()
-    if (stored._rev !== json._rev && me._incrementRev(stored) !== json._rev)
-      return done({error: "conflict"})
+    if (stored._rev !== json._rev) return done({conflict: true})
+    json._rev = me._incrementRev(json)
     return save()
   })
   
