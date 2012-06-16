@@ -37,6 +37,16 @@ var tests = {
       cb(!doc._rev && !doc._stamp && !doc._id)
     })
   }),
+  update: assert(function(p, cb) {
+    p._store({'hello': 'world'}, function(err, doc) {
+      doc.foo = "bar"
+      p._store(doc, function(err, edited) {
+        p.get(doc._id, function(err, retrieved) {
+          cb(JSON.stringify(edited) !== JSON.stringify(retrieved))
+        })
+      })
+    })
+  }),
   get: assert(function(p, cb) {
     p._store({'hello': 'get'}, function(err, doc) {
       p.get(doc._id, function(err, stored) {

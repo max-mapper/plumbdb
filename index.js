@@ -8,7 +8,7 @@ var uuid = require('node-uuid')
 function PlumbDB(name, cb) {
   var me = this
   me.name = name
-  // make sure changes prefix sorts later than doc prefix
+  // make sure stamp prefix sorts later than doc prefix
   me.docPrefix = "@"
   me.stampPrefix = "\u9999"
   leveldb.open(name + ".leveldb", { create_if_missing: true }, loaded)
@@ -132,13 +132,13 @@ PlumbDB.prototype._store = function(json, cb) {
   var me = this
   json = me._cloneObj(json)
   if (!json._id) json._id = uuid.v4()
-  function save(afterPut) {
+  function save(beforePut) {
     me._updateMetadata(json)
     // todo break out into easy batch function
     var batch = new leveldb.Batch
+    if (beforePut) beforePut(batch)
     batch.put(me.stampPrefix + json._stamp, JSON.stringify(json))
     batch.put(me.docPrefix + json._id, json._stamp)
-    if (afterPut) afterPut(batch)
     me.db.write(batch, done)
   }
   function done(err) { cb(err, json) }
@@ -147,7 +147,7 @@ PlumbDB.prototype._store = function(json, cb) {
     // todo decide how to handle err
     if (!stored) return save()
     if (stored._rev !== json._rev) return done({conflict: true})
-    return save(function afterPut(batch) {
+    return save(function beforePut(batch) {
       batch.del(me.stampPrefix + stored._stamp)
     })
   })
