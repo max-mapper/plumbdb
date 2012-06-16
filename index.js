@@ -7,6 +7,7 @@ var uuid = require('node-uuid')
 
 function PlumbDB(name, cb) {
   var me = this
+  me.name = name
   // make sure changes prefix sorts later than doc prefix
   me.docPrefix = "@"
   me.stampPrefix = "\u9999"
@@ -22,6 +23,10 @@ module.exports = function(name, cb) {
 }
 
 module.exports.PlumbDB = PlumbDB
+
+PlumbDB.prototype.destroy = function(cb) {
+  leveldb.destroy(this.name + '.leveldb', cb)
+}
 
 PlumbDB.prototype.get = function(id, cb) {
   var me = this
@@ -67,9 +72,9 @@ PlumbDB.prototype.bulk = function(readStream, cb) {
   var error = false
   
   var q = async.queue(function (doc, cb) {
-    me._store(doc, function(err) {
+    me._store(doc, function(err, stored) {
       if (err) return cb(err)
-      results.push(doc)
+      results.push(stored)
       cb(false)
     })
   }, 1)
@@ -87,10 +92,24 @@ PlumbDB.prototype.bulk = function(readStream, cb) {
   })
 }
 
-PlumbDB.prototype._incrementRev = function(json) {
-  var rev = 0
-  if (json._rev) rev = json._rev.split('-')[0]
-  return ++rev + '-' + this._hash(json)
+PlumbDB.prototype._computeRev = function(json) {
+  json = this._cloneObj(json)
+  var rev = json._rev
+  var version = 0
+  var oldHash = false
+  if (json._rev) {
+    version = json._rev.split('-')[0]
+    oldHash = json._rev.split('-')[1]
+  }
+  delete json._rev
+  var newHash = this._hash(json)
+  if (newHash === oldHash) return rev
+  return ++version + '-' + this._hash(json)
+}
+
+PlumbDB.prototype._updateMetadata = function(json) {
+  if (!json._rev) json._stamp = microtime.now() + ""
+  json._rev = this._computeRev(json)
 }
 
 PlumbDB.prototype._hash = function(json) {
@@ -105,19 +124,22 @@ PlumbDB.prototype._dumpAll = function() {
   })
 }
 
+PlumbDB.prototype._cloneObj = function(json) {
+  return JSON.parse(JSON.stringify(json))
+}
+
 PlumbDB.prototype._store = function(json, cb) {
-  console.log('storing', json)
   var me = this
-  json._stamp = microtime.now() + ""
+  json = me._cloneObj(json)
   if (!json._id) json._id = uuid.v4()
   function save(afterPut) {
-    json._rev = me._incrementRev(json)
+    me._updateMetadata(json)
     // todo break out into easy batch function
-    var batch = me.db.batch()
+    var batch = new leveldb.Batch
     batch.put(me.stampPrefix + json._stamp, JSON.stringify(json))
     batch.put(me.docPrefix + json._id, json._stamp)
     if (afterPut) afterPut(batch)
-    batch.write(done)
+    me.db.write(batch, done)
   }
   function done(err) { cb(err, json) }
   
