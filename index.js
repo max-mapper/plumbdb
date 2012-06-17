@@ -1,3 +1,5 @@
+var stream = require('stream')
+var util = require('util')
 var leveldb = require('leveldb')
 var JSONStream = require('JSONStream')
 var async = require('async')
@@ -126,6 +128,30 @@ PlumbDB.prototype._dumpAll = function() {
 
 PlumbDB.prototype._cloneObj = function(json) {
   return JSON.parse(JSON.stringify(json))
+}
+
+PlumbDB.prototype._advanceKeySeek = function(key, iterator, readStream) {
+  var me = this
+  iterator.current(function(err, k, v) {
+    if (!k.match(new RegExp('^' + key))) return readStream.emit('end')
+    readStream.emit('data', JSON.parse(v))
+    iterator.next(function(err) {
+      me._advanceKeySeek(key, iterator, readStream)
+    })
+  })
+}
+
+PlumbDB.prototype.keyStream = function(key) {
+  var me = this
+  var readStream = new stream.Stream()
+  this.db.iterator(function(err, iterator) {
+    if (err) return readStream.emit('error', err)
+    iterator.seek(key, function(err) {
+      if (err) return readStream.emit('error', err)
+      me._advanceKeySeek(key, iterator, readStream)
+    })
+  })
+  return readStream
 }
 
 PlumbDB.prototype._store = function(json, cb) {

@@ -73,6 +73,21 @@ var tests = {
     p._store(doc, function(err, stored) {
       cb(doc._rev !== stored._rev)
     })
+  }),
+  keyStream: assert(function(p, cb) {
+    p._store({'hello': 'world'}, function(err, doc) {
+      p._store({'goodbye': 'world'}, function(err, doc) {
+        var query = []
+        var ok = true
+        p.keyStream('h')
+          .on('data', function(doc) { query.push(doc) })
+          .on('error', function(err) { ok = false })
+          .on('end', function() {
+            cb(!ok && JSON.stringify(query) !== JSON.stringify([{'hello': 'world'}]))
+          })
+      })
+    })
+    
   })
 }
 
